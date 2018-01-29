@@ -7,13 +7,13 @@ sub call {
         my @groups;
         if(ref $data->{allow_group}  eq "ARRAY"){
             for my $g ($client->groups){
-                next if !first {$_=~/^\d+$/?$g->gnumber eq $_:$g->gname eq $_} @{$data->{allow_group}};
+                next if !first {$_=~/^\d+$/?$g->uid eq $_:$g->name eq $_} @{$data->{allow_group}};
                 push @groups,$g;
             }
         }
         elsif(ref $data->{ban_group}  eq "ARRAY"){
             for my $g ($client->groups){
-                next if first {$_=~/^\d+$/?$g->gnumber eq $_:$g->gname eq $_} @{$data->{ban_group}};
+                next if first {$_=~/^\d+$/?$g->uid eq $_:$g->name eq $_} @{$data->{ban_group}};
                 push @groups,$g;
             } 
         }
@@ -23,6 +23,6 @@ sub call {
         for(@groups){$_->qiandao()}
     };
     $client->on(login=>$callback) if $data->{is_qiandao_on_login};
-    $client->add_job("QQ群每日签到",$data->{qiandao_time} || "09:30",$callback);
+    $client->add_job("Qiandao",$data->{qiandao_time} || "09:30",$callback);
 }
 1;

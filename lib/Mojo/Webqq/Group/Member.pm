@@ -1,15 +1,14 @@
 package Mojo::Webqq::Group::Member;
 use strict;
-use base qw(Mojo::Base Mojo::Webqq::Model::Base);
-sub has { Mojo::Base::attr(__PACKAGE__, @_) };
+use Mojo::Webqq::Base 'Mojo::Webqq::Model::Base';
 has [qw(
-    nick
+    name
     province
-    gender
+    sex
     id
     country
     city
-    card
+    fullcard
     state
     client_type
     qage
@@ -18,26 +17,41 @@ has [qw(
     level
     role
     bad_record
-    gid
-    gcode
-    gtype 
-    gnumber
-    gname
-    gmemo
-    gcreatetime
-    glevel
-    gowner
-    gmarkname
+    _flag
+    _group_id
 )];
-
-has qq  => sub{
+sub card { # from Mojo::Webqq::Base
     my $self = shift;
-    return $self->{qq} if defined $self->{qq};
-    return $self->{_client}?$self->{_client}->get_qq_from_id($self->id):undef;
+    if (@_ == 0) {
+        return defined $self->fullcard ? $self->fullcard : $self->{card};
+    }
+    $self->{card} = shift;
+    $self;
 };
+has uid => sub{
+    my $self = shift;
+    return $self->{uid} if defined $self->{uid};
+    return $self->client->get_qq_from_id($self->id);
+};
+sub qq {$_[0]->uid}
+sub AUTOLOAD {
+    my $self = shift;
+    if($Mojo::Webqq::Group::Member::AUTOLOAD =~ /.*::g(.*)/){
+        my $attr = $1;
+        $self->group->$attr(@_);
+    }
+    else{die("undefined subroutine $Mojo::Webqq::Group::Member::AUTOLOAD");}
+}
+sub nick {$_[0]->name};
 sub displayname {
     my $self = shift;
-    return defined $self->card?$self->card:$self->nick;
+    my $f = $self->client->search_friend(id=>$self->id);
+    if(defined $f){
+        return $f->markname // $self->card // $self->name;
+    }
+    else{
+        return defined $self->card?$self->card:$self->name;
+    }
 }
 
 sub update{
@@ -50,14 +64,14 @@ sub update{
                     my $old_property = $self->{$_};
                     my $new_property = $hash->{$_};
                     $self->{$_} = $hash->{$_};
-                    $self->{_client}->emit("group_member_property_change"=>$self,$_,$old_property,$new_property) if defined $self->{_client};
+                    $self->client->emit("group_member_property_change"=>$self,$_,$old_property,$new_property);
                 }
             }
             elsif( ! (!defined $hash->{$_} and !defined $self->{$_}) ){
                 my $old_property = $self->{$_};
                 my $new_property = $hash->{$_};
                 $self->{$_} = $hash->{$_};
-                $self->{_client}->emit("group_member_property_change"=>$self,$_,$old_property,$new_property) if defined $self->{_client};
+                $self->client->emit("group_member_property_change"=>$self,$_,$old_property,$new_property);
             }
         }
     }
@@ -66,7 +80,7 @@ sub update{
 
 sub send {
     my $self = shift;
-    $self->{_client}->send_sess_message($self,@_);
+    $self->client->send_sess_message($self,@_);
 } 
 sub set_card {
     my $self = shift;
@@ -75,7 +89,7 @@ sub set_card {
 }
 sub group {
     my $self = shift;
-    return scalar $self->{_client}->search_group(gid=>$self->gid);
+    return scalar $self->client->search_group(id=>$self->_group_id);
 }
 sub shutup{
     my $self = shift;

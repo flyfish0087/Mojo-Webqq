@@ -23,25 +23,34 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     #推荐手机安装[QQ安全中心]APP，方便随时掌握自己帐号的情况
     #通过本程序登录QQ之前请先关闭帐号的密保功能
 
+    #初始化一个客户端，采用二维码登录方式
     use Mojo::Webqq;
-    use Mojo::Util qw(md5_sum);
-
-    my $qq = 12345678;           #登录的QQ号
-    my $pwd = "your password";   #使用帐号密码方式登录时需要
-    my $pwd_md5 = md5_sum($pwd); #得到原始密码的32位长度md5
-
-    #初始化一个客户端对象，设置登录的qq号
     my $client=Mojo::Webqq->new(
-        ua_debug    =>  0,         #是否打印详细的debug信息
-        log_level   =>  "info"     #日志打印级别，debug|info|warn|error|fatal
-        qq          =>  $qq,       #必选，登录的qq帐号，用于帐号密码登录或保存登录cookie使用
-        pwd         =>  $pwd_md5,  #可选，如果选择帐号密码登录方式，必须指定帐号密码的md5值
-        login_type  =>  "qrlogin", #"qrlogin"表示二维码登录，"login"表示帐号密码登录
+        http_debug  =>  0,         #是否打印详细的debug信息
+        log_level   =>  "info",    #日志打印级别，debug|info|msg|warn|error|fatal
+        login_type  =>  "qrlogin", #登录方式，qrlogin 表示二维码登录
     );
-    #注意: 腾讯可能已经关闭了帐号密码的登录方式，这种情况下只能使用二维码扫描登录
 
-    #客户端进行登录
-    $client->login(); #请关闭帐号的密保功能，不支持密保登录
+    #初始化一个客户端，采用账号密码登录方式，需要显式设置账号和密码
+    use Mojo::Webqq;
+    use Digest::MD5 qw(md5_hex);
+    my $client=Mojo::Webqq->new(
+        account     => 123456,      #QQ账号
+        pwd         => md5_hex('你的QQ账号登录密码'),  #登录密码
+        http_debug  =>  0,          #是否打印详细的debug信息
+        log_level   =>  "info",     #日志打印级别，debug|info|msg|warn|error|fatal
+        login_type  =>  "login",    #登录方式，login 表示账号密码登录
+    );
+    
+    #注意: 原生的SmartQQ是不支持账号密码登录的
+    #程序实际上是通过 http://qun.qq.com 页面账号密码登录然后和SmartQQ共享登录状态，从而实现账号密码登录
+    #所以，账号密码的登录方式并不稳定，一旦失败，程序会再次自动尝试使用二维码扫描登录
+    #请关闭帐号的密保功能，不支持密保登录
+    #另外，基于账号密码的登录方式，一旦登录所在地发生较大变化，则腾讯服务器可能需要你输入图片验证码
+    #这样就很难实现自动化操作，为了避免这种情况，你需要尽量在pl脚本所在的网络中用浏览器多登录一下 http://qun.qq.com
+    #让腾讯服务器消除登录异常的判断，你可以在服务端搭建ssh隧道，socks5代理，支持SSL转发（CONNECT方法）的http代理等方式
+    #然后浏览器通过服务端代理访问
+    #参考github issue: https://github.com/sjdy521/Mojo-Webqq/issues/183
 
     #客户端加载ShowMsg插件，用于打印发送和接收的消息到终端
     $client->load("ShowMsg");
@@ -88,7 +97,7 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
 =head1 数据类型
 
-数据类型包含 个人、好友、群组、讨论组、最近联系人 几大类型，每种类型都专门设计了类
+数据类型包含 个人、好友、群组、讨论组 几大类型，每种类型都专门设计了类
 
 这些类都继承L<Mojo::Webqq::Model::Base>具有dump的方法，这些数据类型均由系统自动创建和维护
 
@@ -98,26 +107,27 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性:
 
-    birthday        #生日
+    id              #本次登录唯一标识，发送消息时需要用到，id和qq号是两个不同的概念
+    uid             #qq帐号
+    name            #昵称    
+    type            #固定值"user"
+
     phone           #电话
+    birthday        #生日
     occupation      #职业
     college         #大学
-    type            #固定值"user"
-    qq              #qq帐号
-    id              #本次登录唯一标识，发送消息时需要用到，id和qq号是两个不同的概念
     blood           #血型
     constel         #星座
     homepage        #主页
     state           #在线状态 online|away|busy|callme|silent|hidden
     country         #国家
     city            #城市
-    nick            #昵称    
     displayname     #当前和昵称完全一样
     shengxiao       #生效
     email           #邮箱
     client_type     #固定值"web"
     province        #省份
-    gender          #性别
+    sex             #性别
     mobile          #手机
     signature       #个性签名
 
@@ -128,7 +138,7 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 实际想要获取该对象信息时，是通过客户端提供的 user 属性来获取
     
     $client->user       #返回的是一个Mojo::Webqq::User对象
-    $client->user->nick #获取帐号昵称
+    $client->user->name #获取帐号昵称
     $client->user->id   #获取帐号id
     $client->user->dump
 
@@ -136,13 +146,14 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性：
 
-    qq              #好友的qq号码
     id              #好友的id，仅在本次登录期间唯一，多次登录可能会发生变化，记住 id不是qq号
+    uid             #好友的qq号码
     type            #固定值"friend"
     category        #好友所属的分组
-    nick            #好友昵称
+    name            #好友昵称
     markname        #好友备注名称
     displayname     #如果设置了markname 就返回markname 否则返回nick
+
     is_vip          #是否是vip会员
     vip_level       #vip等级
     state           #好友状况 online|away|busy|silent|offline
@@ -155,11 +166,11 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     代码示例：
 
-    my $friend = $client->search_friend(nick=>xxx);
+    my $friend = $client->search_friend(name=>xxx);
     $client->print("好友分组为: ",$friend->category,"\n"); #使用$client->print()可以自动检测终端编码，防止乱码
     $friend->dump();
 
-    $friend->send("hello world"); #比$client->send_message($friend,"hello world")更简洁
+    $friend->send("hello world"); #比$client->send_friend_message($friend,"hello world")更简洁
 
     #遍历好友
     $client->each_friend(sub{
@@ -176,18 +187,21 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性：
 
-    gid             #群的id，仅在本次登录期间唯一，多次登录可能会发生变化
-    gtype           #create|attend|manage 分别表示创建的群|加入的群|管理的群
+    id              #群的id，仅在本次登录期间唯一，多次登录可能会发生变化
     type            #固定值"group"
-    gnumber         #群号码
-    gname           #群名称
-    gmemo           #群说明
-    gcreatetime     #群创建时间
-    glevel          #群等级
-    gowner          #群拥有者的id
-    gmarkname       #群备注名称
+    uid             #群号码
+    name            #群名称
+    memo            #群说明
+    role            #create|attend|manage 分别表示创建的群|加入的群|管理的群
+    owner_id        #群拥有者的id
+    owner_uid       #群拥有者的qq
+    markname        #群备注名称
     displayname     #如果设置了gmarkname 就返回gmarkname 否则返回gname
+    createtime      #群创建时间
+    level           #群等级
     member          #群成员，此属性是一个数组引用，数组中每个元素是一个Mojo::Webqq::Group::Member的对象
+    max_member      #最大群成员数量
+    max_admin       #最大管理员数量
 
     方法：
     search_group_member     #根据群成员属性搜索，标量上下文返回第一个群成员对象，列表上下文返回全部，搜索失败返回undef
@@ -200,6 +214,7 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     shutup_group_member     #对群成员进行禁言
     speakup_group_member    #取消群成员禁言
     members                 #返回群成员对象列表  
+    member_count            #返回当前群成员数量
     send                    #给群对象发送消息
     me                      #返回自己在群成员中的对象 (Mojo::Webqq::Group::Member)
     is_group                #判断对象是否是一个群
@@ -207,10 +222,10 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     qiandao                 #签到
 
     示例代码：
-    my $group = $client->search_group(gname=>"PERL学习交流群"); #返回一个Mojo::Webqq::Group对象
+    my $group = $client->search_group(name=>"PERL学习交流群"); #返回一个Mojo::Webqq::Group对象
     $group->send("hello world"); #在指定的群中发送消息
 
-    my $member = $group->search_group_member(id=>xxx,nick=>xxx); #返回一个Mojo::Webqq::Group::Member对象
+    my $member = $group->search_group_member(id=>xxx,name=>xxx); #返回一个Mojo::Webqq::Group::Member对象
     $member->send("hello world"); #给群中指定的群成员发送临时消息
 
     $group->each_group_member(sub{
@@ -257,33 +272,24 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性：
 
-    nick            #群成员昵称
-    type            #固定值"group_member"
-    province        #省份
-    gender          #性别
     id              #唯一id，仅在本次登录期间唯一，多次登录可能会发生变化
+    uid             #qq号码，当前获取qq号第一次都需要实时调用api获取，效率较低，应避免使用
+    type            #固定值"group_member"
+    name            #群成员昵称
+    province        #省份
+    sex             #性别
     country         #国家
     city            #城市
-    card            #群名片
+    card            #群名片（由于smartqq限制，当前只能获取到群名片的前21个字节，过长会被截断）
     displayname     #设置了card就返回card否则返回nick
     state           #状态
     client_type     #客户端类型
-    qq              #qq号码，当前获取qq号第一次都需要实时调用api获取，效率较低，应避免使用
     qage            #q龄
     join_time       #入群时间
     last_speak_time #最后发言时间
     level           #等级 灌水|传说|潜水 等
     role            #角色 admin|owner|member
     bad_record      #是否包含不良记录 0|1
-    gid             #所在群的id
-    gtype           #所在群的类型
-    gnumber         #所在群的群号码
-    gname           #所在群的名称
-    gmemo           #所在群的说明
-    gcreatetime     #所在群的创建时间
-    glevel          #所在群的等级
-    gowner          #所在群的拥有者id
-    gmarkname       #所在群的备注名称
 
     方法:
     send            #给群成员对象发送消息 $member->send("hello world")
@@ -297,11 +303,11 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性：
 
-    did         #讨论组id
+    id          #讨论组id
     type        #固定值"discuss"
-    dname       #讨论组名称
+    name        #讨论组名称
     displayname #当前返回的和dname一样
-    downer      #讨论组建立者id
+    owner_id    #讨论组建立者id
     member      #讨论组成员，一个数组引用，每个元素是一个Mojo::Webqq::Discuss::Member对象
 
     方法:
@@ -309,6 +315,7 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     search_discuss_member   #搜索讨论组成员
     each_discuss_member     #遍历讨论组成员
     members                 #返回讨论组成员对象列表
+    member_count            #返回当前讨论组成员数量
     send                    #给讨论组对象发送消息
     me                      #获取自己在讨论组中的对象 (Mojo::Webqq::Discuss::Member)
     dump
@@ -318,17 +325,13 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
 
     属性：
 
-    nick
+    name
     type                    #固定值"discuss_member"
     id
-    qq
-    ruin
+    uid
     state
     client_type
-    dname
-    displayname             #当前和dname一样
-    did
-    downer
+    displayname             #当前和name一样
 
     方法：
     send                    #给讨论组成员发送临时消息
@@ -337,32 +340,36 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     is_discuss_member
     discuss                 #获取成员所属的讨论组对象
 
-=head1 消息类型
 
-消息类型主要包含好友消息、群消息、讨论组消息、群临时消息、讨论组临时消息
+=head2 Mojo::Webqq::Message 消息类
 
-所有的消息类都继承Mojo::Webqq::Message::Base，具备dump方法
-
-消息的对象均由系统创建和维护，你只需要对消息对象进行只读操作即可
-
-=head2 Mojo::Webqq::Message::Recv::Message 接收到的好友消息
+    #消息主要包含好友消息、群消息、讨论组消息、群临时消息、讨论组临时消息
+    #所有的消息类都继承Mojo::Webqq::Message::Base，具备dump方法
+    #消息的对象均由系统创建和维护，你只需要对消息对象进行只读操作即可
 
     属性:
 
-    type            #常量"message"
-    msg_class       #常量"recv"
-    msg_from        #消息的来源，比如来自某个插件，可自由定义，默认"none"
+    type            #消息类型：friend_message|group_message|discuss_message|sess_message
+    class           #发送或接收的消息：recv|send
+    from            #消息的来源，比如来自某个插件，可自由定义，默认"none"
     ttl             #默认值5 当ttl减为0会被消息队列丢弃
     allow_plugin    #默认1
-    msg_id          #消息id
+    id              #消息id
     sender_id       #发送者id
     receiver_id     #接收者id
-    sender          #发送者对象，Mojo::Webqq::Friend
-    receiver        #接收者对象，Mojo::Webqq::User
-    msg_time        #消息发送时间
+    sender          #发送者对象，可以是好友|群成员|讨论组成员
+    receiver        #接收者对象，好友|群成员|讨论组成员
+    group           #消息相关的群组对象
+    discuss         #消息相关的讨论组对象
+    time            #消息时间
     content         #消息内容
     text            #纯文本消息内容，不包含表情图片等
     raw_content     #消息原始内容 一个数组引用
+    via             #临时消息的来源：group|discuss
+    
+    code            #发送消息状态，0表示成功，非0失败
+    msg             #发送消息状态中文描述：发送成功|发送失败
+    info            #发送消息更多错误描述信息
 
     方法：
     dump            #打印消息结构，主要用于调试
@@ -373,14 +380,15 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
     images          #获取到消息中图片内容后执行指定回调，适合对具体某个消息进行图片处理
                     #参考 receive_pic 事件，可以设置全局接收图片的处理回调
     reply           #对消息进行回复
-                    #如果msg_class为recv，相当于发送内容给消息发送者，如果msg_class为send，相当于发送内容给消息的接收者
+                    #如果class为recv，相当于发送内容给消息发送者，如果class为send，相当于发送内容给消息的接收者
+
+    is_success      #判断发送消息是否成功
 
     示例代码:
-    $msg->sender->nick; #从接收到的好友消息中 获取好友的昵称 更多好友相关的属性，参考Mojo::Webqq::Friend
+    $msg->sender->displayname; #从消息中 获取发送者的名称
 
-    use Mojo::JSON qw(encode_json);
-    my $json_hash = $msg->to_json_hash();    #获取到经过utf8 decode的hash引用
-    my $json_text = encode_json($json_hash); #将hash转换为json字符串
+    my $json_hash = $msg->to_json_hash();    #获取到hash引用
+    my $json_text = $client->to_json($json_hash); #将hash转换为json字符串
 
     $msg->dump();
     $msg->reply("hello world"); #比$client->reply_message($msg,"hello world")更简洁
@@ -400,170 +408,67 @@ Mojo::Webqq - A Webqq Client Framework base on Mojolicious
         my($client,$image_path,$sender) = @_;
     });
     
-=head2  Mojo::Webqq::Message::Send::Message 发送的好友消息
-
-    属性:
-
-    type            #常量"message"
-    msg_class       #常量"send"
-    msg_from        #消息的来源，比如来自某个插件，可自由定义，默认"none"
-    ttl             #默认值5 当ttl减为0会被消息队列丢弃
-    allow_plugin    #默认1
-    msg_id          #消息id
-    sender_id       #发送者id
-    receiver_id     #接收者id
-    sender          #发送者对象，Mojo::Webqq::User
-    receiver        #接收者对象，Mojo::Webqq::Friend
-    msg_time        #消息发送时间
-    content         #消息内容
     text            #纯文本消息内容，不包含表情图片等
     raw_content     #消息原始内容 一个数组引用
-
-和接收的好友消息具有类似的属性，不同之处在于
-
-msg_class 是常量"send"，你可以通过每个消息的msg_class属性来判断消息是发送消息还是接收消息
-
-对于好友消息，sender是自己(Mojo::Webqq::User) receiver是好友(Mojo::Webqq::Friend)
-
-对于群消息，sender是群中的自己(Mojo::Webqq::Group::Member) receiver是群成员(Mojo::Webqq::Group::Member)
-
-对于讨论组消息，sender是讨论组中自己(Mojo::Webqq::Discuss::Member) receiver是讨论组成员(Mojo::Webqq::Discuss::Member)
-
-对于临时消息，sender是讨论组或群中的自己 receiver是讨论组或群中的成员
-
-其他消息类型也都存在类似的情况，不再赘述
-
-
-=head2 Mojo::Webqq::Message::Recv::GroupMessage 接收到的群消息
-
-    属性:
-
-    type            #常量"group_message"
-    msg_class       #常量"recv"
-    msg_from        #消息的来源，比如来自某个插件，可自由定义，默认"none"
-    ttl             #默认值5 当ttl减为0会被消息队列丢弃
-    allow_plugin    #默认1
-    msg_id          #消息id
-    group_id        #群gid
-    sender_id       #发送消息的群成员id
-    receiver_id     #接收者id，也就是自己的id
-    sender          #发送消息的群成员对象 Mojo::Webqq::Group::Member
-    eeceiver        #群中的自己 Mojo::Webqq::Group::Member对象
-    group           #群对象 Mojo::Webqq::Group
-    msg_time        #消息时间
-    content         #消息内容
-    text            #纯文本消息内容，不包含表情图片等
-    raw_content
-
-=head2 Mojo::Webqq::Message::Send::GroupMessage 发送的群消息
-
-=head2 Mojo::Webqq::Message::Recv::DiscussMessage 接收到的讨论组消息
-
-    属性：
-
-    type            #常量"discuss_message"
-    msg_class       #常量"recv"
-    msg_from        #消息的来源，比如来自某个插件，可自由定义，默认"none"
-    ttl             #默认值5 当ttl减为0会被消息队列丢弃
-    allow_plugin    #默认1
-    msg_id          #消息id
-    discuss_id      #讨论组did
-    sender_id       #发送消息的讨论组成员id
-    receiver_id     #自己的id
-    sender          #发送消息的讨论组成员对象 Mojo::Webqq::Discuss::Member
-    receiver        #讨论组中的自己 Mojo::Webqq::Group::Member对象
-    discuss         #群对象 Mojo::Webqq::Discuss
-    msg_time        #消息时间
-    content         
-    text            #纯文本消息内容，不包含表情图片等
-    raw_content  
-
-=head2 Mojo::Webqq::Message::Send::DiscussMessage 发送的讨论组消息
-
-=head2 Mojo::Webqq::Message::Recv::SessMessage 接收到的临时消息
-
-    属性：
-
-    type            #常量"sess_message"
-    msg_class       #常量"recv"
-    msg_from        #消息的来源，比如来自某个插件，可自由定义，默认"none"
-    ttl             #默认值5 当ttl减为0会被消息队列丢弃
-    allow_plugin    #默认1
-    msg_id          #消息id
-    group_id        #群gid
-    discuss_id      #讨论组did
-    sender_id       #发送消息的讨论组成员id或群成员id
-    receiver_id     #Mojo::Webqq::User对象
-    sender          #发送消息的讨论组成员对象或群成员对象
-    group           #群对象 Mojo::Webqq::Group
-    discuss         #讨论组对象 Mojo::Webqq::Discuss
-    receiver        #群成员对象或者讨论组成员对象
-    msg_time        #消息时间
-    content         
-    text            #纯文本消息内容，不包含表情图片等
-    raw_content
-    via             #如果是群临时消息 则是"group" 如果是讨论组临时消息则是"discuss"
-
-=head2 Mojo::Webqq::Message::Send::SessMessage 发送的临时消息
-
-=head2 Mojo::Webqq::Message::Send::Status 发送消息状态
-
-    属性：
-
-    code    #0 表示成功 非零表示失败
-    msg     #"发送成功"|"发送失败"
-    
-    方法:
-    is_success
-
-    该消息结构主要用于判断发送消息是否成功
 
 =head1 客户端属性
 
     $client->security   #是否开启安全加密
-    $client->state      #登录状态
+    $client->mode       #登录状态
     $client->type       #类型 固定值 smartqq，Mojo::Webqq只支持smartqq
-    $client->ua_debug   #http请求是否打印debug信息
+    $client->htto_debug #http请求是否打印debug信息
     $client->log_level  #日志记录等级 默认info
-    $client->log_path   #日志记录路径，默认undef，打印到STDERR
+    $client->log_path   #日志记录路径，默认undef，打印到STDOUT
     $client->version    #客户端版本
-    $client->qq         #登录帐号
-    $client->encrypt_method        #perl|js 登录加密算法，系统会会自动选择
+    $client->account    #登录帐号，不必是真实的qq号码，可以自由定义，根据扫码确定实际登陆qq
 
 =head1 客户端方法
 
 =head2 new()
 
-    qq              #登录的qq号，可选
-    pwd             #使用帐号密码登录时，qq号对应密码的32位md5
-    security        #设置该参数，将使得发送和接收消息使用https加密
-    state           #设置登录状态，默认是online，支持online|away|busy|silent|hidden|offline
-    ua_debug        #设置该参数，打印调试信息
-    keep_cookie     #默认为1，0表示不保存登录cookie，1表示保存登录cookie方便下次直接恢复登录
+    account           #登录帐号，默认default,不必是真实qq号码，可自由定义，根据扫码确定实际登陆qq
+    security          #设置该参数，将使得发送和接收消息使用https加密
+    mode              #设置登录状态，默认是online，支持online|away|busy|silent|hidden|offline|callme
+    http_debug        #设置该参数，打印调试信息
+    keep_cookie       #默认为1，0表示不保存登录cookie，1表示保存登录cookie方便下次直接恢复登录
+    disable_color     #默认为0，是否禁用终端彩色打印
+    send_interval     #默认为3s，全局发送消息时间间隔，间隔太小会导致消息发送频繁，可能有被封号的风险
+    ignore_send_retcode #对发送消息返回这些状态码不认为发送失败不重试,参数是一个数组引用
+                        #设置示例 Mojo::Webqq->new(ignore_send_retcode=>[1202,100100]);
+                        #默认值 [1202,100100] 不清楚作用请不要随意设置
 
+    ignore_poll_retcode #对接收消息返回这些状态码不认为接收失败，不重新登录，避免频繁掉线
+                        #设置示例 Mojo::Webqq->new(ignore_poll_retcode=>[102,109,110,1202,100012]);
+                        #默认值 [102,109,110,1202,100012] 不清楚作用请不要随意设置
+
+    ignore_unknown_id #其他设备上自己发送的消息，在webqq上会以接受消息的形式再次接收到
+                      #消息发送者是一个未知的id，非常影响很多功能的正常工作，该选项决定是否忽略掉这种消息
+                      #默认值为 1
+    allow_message_sync #是否允许同步来自其他设备登录账号发送的消息 默认为0
+                       #由于webqq自身发送消息后也会收到服务端重复的消息
+                       #且没办法和来自其他设备的消息区分，会导致出现一些不期望的结果，比如某些插件会陷入死循环等
+                       #因此默认不开启消息同步，如果你只是用来irc聊天，则可以考虑开启此选项
+                       #可以同步来自其他设备的消息，体验会更好一些
+
+    log_console     #打印到文件的同时也打印到屏幕，方便调试，默认 1
     log_level       #默认级别为info，可以设置debug|info|warn|error|fatal
-    log_path        #默认客户端输出内容打印到STDERR 设置该参数可以将客户端输出重定向到文件
+    log_path        #默认客户端输出内容打印到STDOUT 设置该参数可以将客户端输出重定向到文件
     log_encoding    #输出日志的编码，默认自动检测，如果出现乱码可以尝试手动设置一下输出编码
                     #编码必须是 Encode 模块支持的格式，比如utf8 gbk等
-    max_recent      #保存的最近联系人个数，默认20
 
-    login_type      #"qrlogin"表示使用二维码登录，"login"表示帐号密码登录，默认为"qrlogin"
-    encrypt_method  #perl|js 系统会自动判断，一般情况下你不需要自己设置登录加密算法
-    
     tmpdir          #程序使用的临时目录，主要用于保存一些验证码、二维码等数据，默认为系统临时目录
-    cookie_dir      #登录cookie的保存目录，默认为 tmpdir 参数所设置的目录
     pic_dir         #图片接收默认地址，默认为 tmpdir 参数所设置的目录
 
     verifycode_path #图片验证码保存路径，默认是 tmpdir 目录下固定文件名
     qrcode_path     #二维码保存路径，默认是 tmpdir 目录下固定文件名
+    cookie_path     #登录cookie接收保存地址，默认为 tmpdir 参数所设置的目录下固定文件名
 
     #程序会根据实际需要自动按需加载好友、群、讨论组信息，首次登录加载这些信息是不必须的
     #如果你的群组数量非常惊人，首次加载会严重影响运行速度，这种情况下建议选择性的取消某些默认加载行为
 
-    is_init_friend      #是否在首次登录时初始化好友信息，默认值 1
+    is_init_friend      #是否在首次登录时初始化好友信息，默认值 1，据测试设置为0可能影响登录
     is_init_group       #是否在首次登录时初始化群组信息，默认值 1
     is_init_discuss     #是否在首次登录时初始化讨论组信息，默认值 1
-    is_init_recent      #是否在首次登录时初始化最近联系人信息，默认值 0
 
     #程序会定期更新个人、好友、群、讨论组信息，目的是为了可以感知新增的成员、失去的好友等
     #如果你完全不关注这些特性，可以关闭定期更新
@@ -571,11 +476,19 @@ msg_class 是常量"send"，你可以通过每个消息的msg_class属性来判�
     is_update_group     #是否定期更新群组信息，默认值 1
     is_update_friend    #是否定期更新好友信息，默认值 1
     is_update_discuss   #是否定期更新讨论组信息，默认值 1
+    update_interval     #定时更新群组、好友、讨论组等信息的时间间隔，默认600秒
+
+    is_fetch_notice     #是否获取公告信息，默认值 1
 
     msg_ttl             #发送失败的消息，重试次数，默认是5
 
-    $client->new(ua_debug=>0,qq=>xxxxxx,login_type=>"qrlogin");
-    $client->new(ua_debug=>0,qq=>xxxxxx,pwd=>xxxxx,login_type=>"login");
+    qrcode_count_max    #每个二维码都有一个过期时间，过期后会重新下载一个二维码继续等待扫描
+                        #如果等待扫码次数超过 qrcode_count_max 客户端会停止运行，默认10次
+
+    #注意：所有参数都支持通过环境变量来设置，参数对应的环境变量格式 MOJO_WEBQQ_{参数名大写}
+    #比如: MOJO_WEBQQ_ACCOUNT、 MOJO_WEBQQ_HTTP_DEBUG
+
+    $client->new(http_debug=>0,account=>'xxxxxx',log_level=>'info');
 
 =head2 on()
 
@@ -589,15 +502,9 @@ msg_class 是常量"send"，你可以通过每个消息的msg_class属性来判�
 
 客户端登录
 
-    $client->login([delay=>0|1]);    
-    
-    delay  可选,0表示不延迟，立即登录 1表示在after_load_plugin事件触发后登录，即全部插件加载完毕后再执行登录,默认值为0
+    $client->login();    
 
-注意：如果使用帐号密码的登录方式，需要依赖L<Webqq::Encryption>模块
-
-推荐安装L<Crypt::RSA> 或者 L<Crypt::OpenSSL::RSA> + L<Crypt::OpenSSL::Bignum>模块
-
-能够极大的提升L<Webqq::Encryption>登录加密算法的计算速度（Centos可以使用 yum -y install perl-Crypt-OpenSSL-* 来方便安装）
+注意：程序会自动调用该方法，一般情况下你不需要自己调用
 
 =head2 relogin() 重新登录
 
@@ -623,41 +530,14 @@ msg_class 是常量"send"，你可以通过每个消息的msg_class属性来判�
 
     $client->run();
 
-=head2 multi_run() 启动主事件循环(多帐号)
-
-登录多个qq帐号时使用，详情参见ready()方法介绍
-
-=head2 ready() 只准备不运行
-
-当你想要同时运行多个qq帐号 $client->run()会阻塞你的代码，导致无法同时使用多个帐号
-
-这种情况下，你应该放弃使用$client->run() 你会需要ready()方法
-
-    #同时登录多个qq帐号
-    my $client1 = Mojo::Webqq->new(qq=>xxx1);
-    my $client2 = Mojo::Webqq->new(qq=>xxx2);
-    
-    $client1->login();
-    $client2->login();
-    
-    $client1->ready;
-    $client2->ready;
-    
-    Mojo::Webqq->multi_run(); 
-
-=head2 stop(["auto"|"noexit"]) 停止收发消息
-
-客户端终止接收和发送消息，其他非接收和发送消息类的功能仍然可以继续执行
-
-    $client->stop(["auto"]) #默认参数是auto，当多个qq帐号客户端中的最后一个stop时，整个程序也会退出(exit)
-    $client->stop("noexit") #即使所有的qq帐号都stop了，整个客户端也不调用exit退出
+=head2 stop() 停止收发消息
 
 =head2 add_job($job_name,$time,$callback); 指定时刻执行
 
 定时执行任务
     
     #支持的时间格式为 HH:MM 或 HH:MM:SS
-    $client->add_job("定时提醒","07:00",sub{$client->send_message($friend,"起床啦");});
+    $client->add_job("定时提醒","07:00",sub{$client->send_friend_message($friend,"起床啦");});
 
 =head2 spawn(%opt) 执行外部命令
 
@@ -842,64 +722,52 @@ msg_class 是常量"send"，你可以通过每个消息的msg_class属性来判�
 
 遍历所有讨论组中的所有讨论组成员，和遍历好友或群类似 不再赘述
 
-=head2 each_recent(sub{...}) 遍历最近联系人
-
-=head2 recents() 获取最近联系人列表
-
-返回最近联系人对象数组，数组中的每个元素是Mojo::Webqq::Friend/Mojo::Webqq::Group::Member/Mojo::Webqq::Dicuss::Member对象
-
-    my @recents = $client->recents();
-
-=head2 send_message($friend,$content,[$callback]) 发送好友消息
+=head2 send_friend_message($friend,$content,[$callback]) 发送好友消息
     
     my $friend = $client->search_friend(id=>xxx);#$friend是一个Mojo::Webqq::Friend的对象
-    $client->send_message($friend,"hello world");#发送内容必须是utf8编码
+    $client->send_friend_message($friend,"hello world");#发送内容必须是utf8编码
 
     在callback中对发送的消息进行预处理
-    $client->send_message($friend,"hello world",sub{
+    $client->send_friend_message($friend,"hello world",sub{
         my ($client,$msg) = @_;
         #对即将发送的消息进行预处理
         $msg->msg_from("自定义的来源标识");
     
         #设置该条消息发送完毕后的回调函数
         $msg->cb(sub{
-            my($client,$msg,$status)=@_;
-            print $msg->msg_id . "发送失败\n" if  not $status->is_success;
+            my($client,$msg)=@_;
+            print $msg->id . "发送失败\n" if  not $msg->is_success;
         });
     });
 
 =head2 send_group_message($group,$content,[$callback]) 发送群消息
     
-    my $group = $client->search_group(gname=>"PERL学习交流");#$group是一个Mojo::Webqq::Group的对象
+    my $group = $client->search_group(name=>"PERL学习交流");#$group是一个Mojo::Webqq::Group的对象
     $client->send_group_message($group,"hello world");
 
 =head2 send_discuss_message($discuss,$content,[$callback]) 发送讨论组消息
 
-    my $discuss = $client->search_discuss(dname=>"讨论组");#$discuss是一个Mojo::Webqq::Discuss的对象
+    my $discuss = $client->search_discuss(name=>"讨论组");#$discuss是一个Mojo::Webqq::Discuss的对象
     $client->send_discuss_message($discuss,"hello world");
 
 注意：由于腾讯限制，当前无法成功发送讨论组消息
 
 =head2 send_sess_message($group_member|$discuss_member,$content,[$callback]) 发送群或讨论组临时消息
 
-    #直接在整个数据库中搜索指定群成员
-    my $group_member = $client->search_group_member(gname=>"PERL学习交流",nick=>"小灰");
-    #$group_member是一个Mojo::Webqq::Group::Member的对象
-    $client->send_sess_message($group_member,"hello world");
-
-    #先找到群，再使用群搜索到群成员，比上述的全局搜索方法更高效一些
-    my $group = $client->search_group(gname=>"PERL学习交流");
-    my $member = $group->search_group_member(nick=>"小灰");
-    $client->send_sess_message($member,"hello world");
-
-    my $discuss_member = $client->search_discuss_member(dname=>"讨论组",nick=>"小灰");
-    #$discuss_member是一个Mojo::Webqq::Discuss::Member的对象
-    $client->send_sess_message($discuss_member,"hello world");
-     
+    #先找到群，再使用群搜索到群成员
+    my $group = $client->search_group(name=>"PERL学习交流");
+    if(not defined $group){
+        #没有搜索到群成员，处理你的异常
+        ...;
+    }
+    else{
+        my $member = $group->search_group_member(name=>"小灰");
+        $client->send_sess_message($member,"hello world") if defined $member;
+    }
 
 =head2 reply_message($msg,$content,[$callback]) 对收到的消息进行回复
 
-send_message()/send_group_message()/send_discuss_message()/send_sess_message()
+send_friend_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 这一类方法适合对特定的对象主动发送消息，但很多场景下，我们不需要关心对方是谁
 
@@ -920,7 +788,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
     my ($http_body,$ua,$tx) = $client->http_get($url,$header);
     
     #可以在http header设置一些请求相关的选项，比如：
-    #json=>1 表示将响应的json数据进行json decode得到perl的hash引用
+    #json=>1 表示将响应的json数据进行转换得到perl的hash引用
     #retry_times=>3 表示请求失败自动重试次数，默认使用$client->ua_retry_times的值
     my $json_decode_hash = $client->http_get($url,{json=>1,retry_times=>3,Host=>"www.qq.com"});
 
@@ -967,17 +835,6 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 因此，你可能会发现当群成员加入后，过了10分钟才会触发相关的事件，或者新增群成员一旦发言也会发送触发事件
 
-
-当前核心事件的触发顺序(采用延迟登录)
-
-                                                                                 +->before_send_message
-    plugin_load -+                                                               |->receive_message
-                 |->after_load_plugin-->input_img_verifycode->login->ready->run->|->send_message
-    plugin_call -+                    |                                      |   |->new_friend
-                                      +-input_qrcode                         |   |->receive_friend_pic
-                                                             relogin<-login<-+   |->lose_friend
-                                                                                 ...
-
 =head2 reveive_message 接收消息事件
 
 传递给回调函数的参数是接收到的消息对象
@@ -986,19 +843,22 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 =head2 send_message 发送消息事件
 
-传递给回调函数的参数是 接收到的消息对象 和 发送状态对象
-
-发送状态对象是Mojo::Webqq::Message::Send::Status的实例
+传递给回调函数的参数是 发送出去的消息对象
     
     $client->on(send_message=>sub{
-        my ($client,$msg,$status)=@_; 
-        #$status是一个Mojo::Webqq::Message::Send::Status的对象,主要用于判断消息是否发送成功
-        print $msg->msg_id,"发送成功" if $status->is_success  
+        my ($client,$msg)=@_; 
+        print $msg->id,"发送成功" if $msg->is_success  
     });
 
 =head2 login 登录成功事件
 
-登录完成时触发事件，无额外的回调参数
+登录完成时触发事件
+
+    $client->on(login=>sub{
+        my($client,$is_scan) = @_;
+        #$is_scan   值为1表示本次登录是扫描二维码登录的 好友，群组对象的id可能会发生变化
+        #           值为0表示本次登录是使用cookie直接恢复登录，未经过二维码扫描，对象id一般不会发生变化
+    });
 
 =head2 relogin 重新登录成功事件
 
@@ -1010,7 +870,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 =head2 input_qrcode 等待扫描二维码
 
-登录需要扫描二维码，参数为二维码文件的路径
+登录需要扫描二维码，参数分别为二维码文件的本地路径
 
 =head2 ready 准备就绪
 
@@ -1076,7 +936,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
     $client->on(lose_discuss_member=>sub{my ($client,$discuss_member)=@_});
 
-=head2 receive_pic 接收图片
+=head2 receive_pic 接收图片(已失效)
 
     $client->on(receive_pic=>sub{ 
         my($client,$filepath,$sender)=@_;
@@ -1088,7 +948,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
     });
 
 
-=head2 receive_friend_pic 接收好友图片
+=head2 receive_friend_pic 接收好友图片(已失效)
 
     $client->on(receive_friend_pic=>sub{ 
         my($client,$filepath,$friend)=@_;
@@ -1096,7 +956,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
         #$friend   发送图片的好友对象
     });
 
-=head2 receive_sess_pic 接收陌生人图片
+=head2 receive_sess_pic 接收陌生人图片(已失效)
 
     $client->on(receive_sess_pic=>sub{ 
         my($client,$filepath,$sender)=@_;
@@ -1104,7 +964,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
         #$sender   发送图片的群成员或讨论组成员
     });
 
-=head2 receive_group_pic 接收到群图片
+=head2 receive_group_pic 接收到群图片(已失效)
 
     $client->on(receive_group_pic=>sub{ 
         my($client,$filepath,$sender)=@_;
@@ -1113,17 +973,6 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
         #$sender   发送图片的群成员对象
     });
 
-=head2 first_talk 某人第一次消息
-
-第一次的定义为：收到某个用户在4小时内第一次发送的消息
-
-    $client->on(first_talk=>sub{
-        my($client,$sender,$msg) = @_;
-        #$sender 发送消息的好友 或者 群成员 或者 讨论组成员
-        #$msg    接收到的消息
-        $sender->send("怎么这么久才想起我?");
-    });
-    
 =head2 before_send_message 消息即将发送
 
 消息发送之前的事件，一般用于在即将发送消息前对消息进行预处理
@@ -1171,7 +1020,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 但当前发现运行一段时间，可能由于cookie过期等原因无法再成功更新这些信息，连续多次更新失败会触发该事件
 
-但并不影响消息接收和发送，只是部分功能受限 
+但并不影响消息接收，可能影响消息发送或者其他部分功能受限 
 
 如果你很在意这些数据更新是否成功，你可以考虑在该事件触发时重新登录，便可以恢复数据更新功能
 
@@ -1185,7 +1034,7 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
     $client->on(receive_raw_message=>sub{
         my ($client,$bytes,$hash) = @_;
         #$bytes 是接收到的原始消息 json 格式数据，未做任何处理
-        #$hash 是将 $bytes 进行 Mojo::JSON::decode_json 之后得到的 perl hash 结构
+        #$hash 是将 $bytes 进行 Mojo::JSON::from_json 之后得到的 perl hash 结构
     });
 
 =head1 关于插件
@@ -1212,13 +1061,13 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
     $client->call("plugin",[可选参数]);
 
-客户端实现了一个简单的插件管理机制，插件是一个简单的call函数，包名默认是Mojo:Webqq::Plugin::
+客户端实现了一个简单的插件管理机制，插件是一个简单的call函数，包名默认是Mojo::Webqq::Plugin::
 
 比如，我编写一个简单的hello world插件，效果是对接收到的任意消息回复一个"hello world"
 
-编写一个包 Mojo:Webqq::Plugin::HelloWorld
+编写一个包 Mojo::Webqq::Plugin::HelloWorld
 
-    package Mojo:Webqq::Plugin::HelloWorld;
+    package Mojo::Webqq::Plugin::HelloWorld;
     our $PRIORITY = 10; #可省略，除了在load中使用priority设置优先级，也可以通过包变量设置
     our $AUTO_CALL = 1; #可省略，通过包变量设置插件是否默认加载后立刻执行
     sub call{
@@ -1272,36 +1121,70 @@ send_message()/send_group_message()/send_discuss_message()/send_sess_message()
 
 作者 shalk  L<https://github.com/shalk>
 
-=head2 Mojo::Webqq::Plugin::MsgSync
-
-实现QQ群和IRC的联通，彼此的消息自动同步，采用的是irc bot转发的形式，需要依赖L<Mojo::IRC>模块
-
-该插件功能不够强大，体验也不够好，完全可以被插件 Mojo::Webqq::Plugin::IRCShell 取代了
-
-    $client->load("MsgSync",data=>{
-        irc=>{nick=>"xxxx",user=>"xxxx",pass=>"xxxx",server=>"irc.perfi.wang"},
-        pairs=>[
-            ["#ChinaPerl",$m->search_group(gname=>"PERL学习交流")],
-            ["#Mojolicious",$m->search_group(gname=>"Mojolicious")],
-        ]
-    });    
-
 =head2 Mojo::Webqq::Plugin::IRCShell
 
-将qq协议转换成irc协议，启动一个本地的irc服务器，使用任意irc客户端（irc user设置为qq号）连接后即可以按照irc的方式使用qq
+将qq协议转换成irc协议，启动一个本地的irc服务器，使用任意irc客户端（irc nick设置为qq昵称）连接后即可以按照irc的方式使用qq
 
 需要依赖模块 L<Mojo::IRC::Server::Chinese>
 
-    $client->load("IRCShell",data=>{listen=>[ {host=>"127.0.0.1",port=>6667} ] } );#开启本地的irc server
+    $client->load("IRCShell",data=>{
+        listen=>[ {host=>"0.0.0.0",port=>6667},], #可选，IRC服务器监听的地址+端口，默认0.0.0.0:6667
+        load_friend => 0, #可选,是否初始为每个好友生成irc虚拟帐号并加入频道 #我的好友
+    });
     #支持的参数包括：
-    host                #默认0.0.0.0
-    port                #默认6667
-    master_irc_user     #和qq匹配的irc user帐号，默认按照和qq号相同的user或者客户端ip是本机地址作为识别规则
+    listen              #监听的地址和端口，数组的形式来支持多个地址
+                        # listen=>[ {host=>"127.0.0.1",port=>6667}, {host=>"127.0.0.1",port=>6668}]
+                        # 表示监听127.0.0.1:6667和 127.0.0.1:6668两个端口
+    allow_group         # allow_group=>["群组1名称","群组2号码",], #可选，允许在irc上创建的QQ群名称或群号码
+    ban_group           # ban_group=>["群组1名称","群组1号码"],  #可选，禁止在irc上创建的QQ群名称
+    master_irc_nick     # 和QQ关联的irc客户端昵称，默认按照和QQ相同的昵称或者客户端ip是本机地址作为识别规则
+                        # 用于识别哪个连接到服务器上的irc用户是你自己
+    auto_join_channel   #0|1 默认为1，开启该选项，收到未加入的频道消息会自动加入频道并接收消息，主要为了防止漏收
     load_friend         #0|1 默认是0 是否初始为每个好友生成irc虚拟帐号并加入频道 #我的好友
-    image_api           #兼容elimage图床api地址，将qq图片转为连接，方便在irc上查看图片，默认没有启用
-                        #推荐依云的elimage http://img.vim-cn.com/
+    upload_api          #图床api地址，将图片转为连接，方便在irc上查看图片
+                        #支持兼容 http://img.vim-cn.com/ 的接口，考虑到隐私问题，默认不开启
 
-qq好友会默认加入到irc的 '#我的好友' 频道中
+    #以下参数需要 Mojo::IRC::Server::Chinese v1.8.1及以上版本
+
+    #TLS支持
+
+    #代码示例
+    $client->load("IRCShell",data=>{
+        listen=>[ 
+            {host=>"0.0.0.0",port=>6667},         #监听普调端口
+            {host=>"0.0.0.0",port=>6697,tls=>1},  #监听6697端口，开启TLS加密
+        ],
+    });
+
+    #支持的TLS参数：
+    #更多详细参数使用说明参见 https://metacpan.org/pod/Mojo::IOLoop::Server#tls
+    tls                 #0|1 是否启用tls加密
+    tls_ca              #可选，本地ca证书路径 例如 /etc/tls/ca.crt
+    tls_cert            #可选，服务器证书路径，默认会生成一个测试证书
+    tls_ciphers         #可选，加密套件，例如 AES128-GCM-SHA256:RC4:HIGH:!MD5:!aNULL:!EDH
+    tls_key             #可选，服务器证书key文件路径
+    tls_verify          #可选，验证模式
+    tls_version         #可选，协议版本，例如 TLSv1_2
+
+    create_chanserv_user #0|1 默认为1，是否创建频道时自动生成昵称为 ChanServ 的虚拟用户
+                         #主要用于解决频道人数为空时，HexChat等某些客户端/list无法获取到频道信息的问题
+
+    auth                 #登录验证函数，在客户端登录后被执行，返回 1 验证通过，返回 0 验证失败
+
+    代码举例：
+    $client->load("IRCShell",data=>{
+        auth => sub{
+            my($nick,$user,$pass) = @_; #传递给验证函数的三个参数依次是 irc客户端的NICK/USER/PASS
+            if($nick eq '小灰'){#对于昵称"小灰"进行密码验证
+                return 0 if not defined $pass; #没有设置密码，验证失败
+                return 0 if $pass ne '123456'; #设置的密码不是 "123456" 验证失败
+                return 1; #验证成功，允许正常登录
+            }
+            else{return 1;}#对其他登录昵称不进行验证，全部允许登录
+        }
+    });
+
+当设置了 load_friend =>1 参数，qq好友会默认加入到irc的 '#我的好友' 频道中，可能影响加载速度
 
 每个qq群也会在irc上创建对应的频道，比如qq群[PERL学习交流]对应的irc频道为'#PERL学习交流'
 
@@ -1405,21 +1288,44 @@ julia/lua/nim/ocaml/python
     learn 今天天气怎么样  天气很好
     学习  "你吃了吗"      当然吃了
     learn '哈哈 你真笨'   "就你聪明"
+    learn* "你吃了吗"      当然吃了 （指令结尾有*表示添加全局知识库，默认只添加到所在的群组或好友知识库中）
 
     del   今天天气怎么样
     删除  '哈哈 你真笨'
+    del*  今天天气怎么样  （删除全局知识库）
 
 其他更多参数设置
 
     $client->load("KnowledgeBase",data=>{
         allow_group => ["PERL学习交流"],  #可选，允许插件的群，可以是群名称或群号码
         ban_group   => ["私人群",123456], #可选，禁用该插件的群，可以是群名称或群号码
-        file => './KnowledgeBase.dat', #数据库保存路径
-        learn_command  => 'study',     #自定义学习指令关键字
-        delete_command =>'clear',      #自定义删除指令关键字
+        file => './KnowledgeBase.txt', #数据库保存路径，纯文本形式，可以编辑
+        learn_command  => 'learn',     #可选，自定义学习指令关键字
+        delete_command =>'del',      #可选，自定义删除指令关键字
         learn_operator => [12345,678910], #允许学习权限的操作人qq号
         delete_operator => [12345,678910], #允许删除权限的操作人qq号
+        mode => 'fuzzy', # fuzzy|regex|exact 分别表示模糊|正则|精确, 默认模糊
+        check_time => 10, #默认10秒检查一次文件变更
+        show_keyword => 1, #消息是否包含触发关键字信息，默认为0
     });
+
+1）知识库采用文本文件形式，可编辑，格式如下：
+
+分组空间（群名称)  #  匹配关键字（或正则表达式） #  回复内容
+
+文件中存储的数据格式示例：
+
+    __全局__         #   你好                      # 很高兴认识
+    __我的好友__     #   多谢                      # 不客气
+    我的群组1        #   今天天气怎么样            # 没有雨\n不用带伞 （\n表示换行）
+    我的群组1        #   今天天气怎么样            # 不知道
+    我的群组1        #   今天天气怎么样            # 自己百度 （相同关键字可以设置多行的回复内容，随机选取）
+    我的群组2        #   ^在吗(\?|)$               # 在呀，啥事
+    我的群组2        #   大(神|婶)                 # 大神你妹啊
+    我的群组3        #   井号怎么打出来            # 我发给你：\# 不客气 （井号要转义）
+
+2）定时检查知识库变动，自动实时加载，插件中的check_time参数可以设置定时检测间隔
+
 
 =head2 Mojo::Webqq::Plugin::FuckDaShen
 
@@ -1454,10 +1360,7 @@ julia/lua/nim/ocaml/python
 
 调用系统的图片查看程序来展示二维码图片，方便扫描，作者 autodataming L<https://github.com/autodataming>
 
-    $client->load("ShowQRcode");#当前仅支持win,并且需要在调用$client->login()方法之前加载
-    $client->login();
-    $client->load("ShowMsg");
-    ...;
+    $client->load("ShowQRcode");#当前仅支持win
     
 =head2 Mojo::Webqq::Plugin::GasPrice
 
@@ -1484,7 +1387,7 @@ QQ群每日签到插件
         allow_group => ["PERL学习交流"],  #可选，允许插件的群，可以是群名称或群号码
         ban_group   => ["私人群",123456], #可选，禁用该插件的群，可以是群名称或群号码
         is_qiandao_on_login => 0 ,        #可选，是否登录时进行签到，默认值为0
-        qiandao_time => "09:30" ,         #可选，每日签到的时间，默认是 09:0
+        qiandao_time => "09:30" ,         #可选，每日签到的时间，默认是 09:30
     });
 
 =head2 Mojo::Webqq::Plugin::GroupManage
@@ -1520,14 +1423,18 @@ QQ群每日签到插件
         },
     });
 
+=head2 Mojo::Webqq::Plugin::UploadQRcode
+
+将二维码图片上传至腾讯云对象存储，获取到公网可以访问的url地址
+
+    $client->load("UploadQRcode");
+
 =head2 Mojo::Webqq::Plugin::PostQRcode
 
 登录过程如果需要手机扫描二维码，会将二维码以邮件附件的形式发送到指定邮箱，再通过手机QQ扫描二维码
 
 注意： 由于需要发送邮件附件，依赖模块 L<Mojo::SMTP::Client> L<MIME::Lite>，需要单独安装
 
-    #插件需要使用到login()方法执行过程中触发的input_qrcode事件，因此需要在login()执行之前加载
-    #插件自身设置了call_on_load=>1，因此会在加载后马上执行
     $client->load("PostQRcode",data=>{
         smtp    =>  'xxxx', #邮箱的smtp地址  
         port    =>  'xxxx', #smtp服务器端口，默认25
@@ -1535,9 +1442,9 @@ QQ群每日签到插件
         to      =>  'xxxx', #收件人
         user    =>  'xxxx', #smtp登录帐号
         pass    =>  'xxxx', #smtp登录密码
+        tls     =>  0,      #可选，是否使用SMTPS协议，默认为0
+                            #在没有设置的情况下，如果使用的端口为465，则该选项会自动被设置为1
     });
-    $client->login();
-    ...;
 
     收到的邮件内容如下：
 
@@ -1552,8 +1459,6 @@ QQ群每日签到插件
 
 注意： 由于需要发送邮件附件，依赖模块 L<Mojo::SMTP::Client> L<MIME::Lite>，需要单独安装
 
-    #插件需要使用到login()方法执行过程中触发的input_img_verifycode事件，因此需要在login()执行之前加载
-    #插件自身设置了call_on_load=>1，因此会在加载后马上执行
     $client->load("PostImgVerifycode",data=>{
         smtp    =>  'xxxx', #邮箱的smtp地址  
         port    =>  'xxxx', #smtp服务器端口，默认25
@@ -1564,14 +1469,26 @@ QQ群每日签到插件
         post_host => 'xxx.xxx.xxx.xxx' , #本机公网IP地址，需要远程访问
         post_port => 'xxxx'            , #提交验证码的链接地址中使用的端口，默认1987
     });
-    $client->login();
-    ...;
 
     收到的邮件内容如下：
 
     主题：QQ帐号 xxxx 登录验证码
     附件：webqq_img_verfiy_xxxx.jpg
     正文：请点击以下链接提交验证码：http://xxx.xxx.xxx.xxx:xxxx/check_code
+
+=head2 Mojo::Webqq::Plugin::GCM
+
+接收消息通过谷歌提供的GCM接口发送到android手机
+
+    $client->load("GCM",data=>{
+        api_url         => 'https://gcm-http.googleapis.com/gcm/send',
+        api_key         =>'xxx', #需要向谷歌申请
+        registration_ids=>["xxx"],#android设备的注册id
+        allow_group     =>["允许推送消息的群名称1","允许推送消息的群名称2","或者群号码"],
+        ban_group       =>["禁止推送消息的群名称","或者群号码"],
+        allow_dicuss    =>["允许推送消息的讨论组名称1","允许推送消息的讨论组名称2"],
+        ban_discuss     =>["禁止推送消息的讨论组名称",],
+    });
 
 =head2 Mojo::Webqq::Plugin::SmartReply
 
@@ -1580,29 +1497,51 @@ QQ群每日签到插件
 为避免对群内成员产生影响，默认群内需要使用 @帐号昵称 来触发
 
     $client->load("SmartReply",data=>{
+        apikey          => '4c53b48522ac4efdfe5dfb4f6149ae51', #可选，参考http://www.tuling123.com/html/doc/apikey.html
+        friend_reply    => 1, #是否针对好友消息智能回复
+        group_reply     => 1, #是否针对群消息智能回复
         allow_group     => ["PERL学习交流"],  #可选，允许插件的群，可以是群名称或群号码
         ban_group       => ["私人群",123456], #可选，禁用该插件的群，可以是群名称或群号码
         ban_user        => ["坏蛋",123456], #可选，禁用该插件的用户，可以是用户的显示名称或qq号码
         notice_reply    => ["对不起，请不要这么频繁的艾特我","对不起，您的艾特次数太多"], #可选，提醒时用语
         notice_limit    => 8 ,  #可选，达到该次数提醒对话次数太多，提醒语来自默认或 notice_reply
         warn_limit      => 10,  #可选,达到该次数，会被警告
-        ban_limit       => 12,  #可选,达到该次数会被列入黑名大不再进行回复
+        ban_limit       => 12,  #可选,达到该次数会被列入黑名单不再进行回复
+        ban_time        => 1200,#可选，拉入黑名单时间，默认1200秒
         period          => 600, #可选，限制周期，单位 秒
-        is_need_at       => 1,  #默认是1 是否需要艾特才触发回复
+        is_need_at      => 1,  #默认是1 是否需要艾特才触发回复 仅针对群消息
+        keyword         => [qw(小灰 小红 小猪)], #触发智能回复的关键字
     });
 
 =head2 Mojo::Webqq::Plugin::Openqq
 
 提供HTTP API接口，方便获取客户端帐号、好友、群、讨论组信息，以及通过接口发送和接收好友消息、群消息、群临时消息和讨论组临时消息
 
-    #兼容老版本，data是一个ARRAY引用,可以设置多个监听的地址和端口
-    $client->load("Openqq",data=>[ {host=>"127.0.0.1",port=>5000}, ]); 
+CPAN文档可能比较旧或者表达的信息不够丰富，请参考github上API相关说明L<https://github.com/sjdy521/Mojo-Webqq/blob/master/API.md>
 
-    #新版本，data可以是一个HASH引用
+    #同时支持http/https请求
+    $client->load("Openqq",data=>{
+        listen => [
+            {   host=>"0.0.0.0",
+                port=>5000,                     #监听5000端口的http请求
+            },
+            {
+                host    =>"0.0.0.0",
+                port    =>443,                    #可选，https请求监听端口，默认443
+                tls         =>1,                      #必选，开启https请求支持
+                tls_ca      =>"/etc/tls/ca.crt"       #可选，ca证书路径
+                tls_cert    =>"/etc/tls/server.crt"   #可选，服务器证书路径，默认生成一个测试证书
+                tls_key     =>"/etc/tls/server.key"   #可选，证书对应的key文件，默认生成一个测试key文件
+            },#更多tls参数支持参考 https://metacpan.org/pod/Mojo::IOLoop::Server#tls
+        ],
+    });
+    
+    #data是一个HASH引用
     $client->load("Openqq",data=>{                                                 
-        listen => [ {host=>"127.0.0.1",port=>5000}, ] , #监听的地址和端口，支持多个
+        listen => [ {host=>"0.0.0.0",port=>5000}, ] , #监听的地址和端口，支持多个
         auth   => sub {my($param,$controller) = @_},    #可选，认证回调函数，用于进行请求鉴权
         post_api => 'http://xxxx',                      #可选，自定义的接收消息上报接口,并可以根据接口返回内容回复消息
+        post_stdout => 0                                #可选，上报数据是否打印到stdout，适合管道交互信息方式，默认0
     });
 
     #若data中设置了auth函数引用，则表示api接口开启认证
@@ -1614,7 +1553,7 @@ QQ群每日签到插件
     #auth函数示例：
 
     #简单的时间戳过期防盗链 
-    #http://127.0.0.1/openqq/send_message?id=xxxx&content=xxxx&key=xxxx&exp=xxxx
+    #http://127.0.0.1/openqq/send_friend_message?id=xxxx&content=xxxx&key=xxxx&exp=xxxx
     sub {
         my $param = shift;
         my $secret = 'this is your secret key';
@@ -1639,7 +1578,7 @@ QQ群每日签到插件
     #接收消息上报接口示例：
     $client->load("Openqq",data=>{
         listen => [{host=>xxx,port=>xxx}],
-        post_api=> 'http://127.0.0.1:3000/post_api',
+        post_api=> 'http://127.0.0.1:5000/post_api',
     });
 
     #接收到消息后，插件会通过HTTP POST请求的方式将json格式的消息上报到http://127.0.0.1:3000/post_api
@@ -1650,16 +1589,20 @@ QQ群每日签到插件
     Content-Length: xxx
     Content-Type: application/json
     
-    {   "receiver":"小灰",
-        "msg_time":"1442542632",
+    {
+        "time":"1442542632",
         "content":"测试一下",
-        "msg_class":"recv",
+        "class":"recv",
+        "sender":"灰灰",
         "sender_id":"2372835507",
+        "sender_uid":"456789",
+        "receiver":"小灰",
         "receiver_id":"4072574066",
+        "receiver_uid":"123456",
         "group":"PERL学习交流",
         "group_id":"2617047292",
-        "sender":"灰灰",
-        "msg_id":"10856",
+        "group_uid":"67890",
+        "id":"10856",
         "type":"group_message"
     }
 
@@ -1694,26 +1637,41 @@ QQ群每日签到插件
     /openqq/get_friend_info         #查询好友信息
     /openqq/get_group_info          #查询群信息
     /openqq/get_discuss_info        #查询讨论组信息
-    /openqq/get_recent_info         #查询最近联系人列表信息
     
     #消息发送，均支持GET和POST
-    /openqq/send_message            #发送好友消息 参数id=xxx&content=xxx 或 qq=xxx&content=xxx
-    /openqq/send_group_message      #发送群消息   参数gid=xxx&content=xxx 或 gnumber=xxx&content=xxx
-    /openqq/send_discuss_message    #发送讨论组消息 参数did=xxx&content=xxx （由于腾讯限制，当前无法成功发送）
-    /openqq/send_sess_message       #发送群临时消息  参数 gid=xxx&id=xxx&content=xxx 或 gnumber=xxx&qq=xxx&content=xxx
-    /openqq/send_sess_message       #发送讨论组临时消息 参数 did=xxx&id=xxx&content=xxx 或 did=xxx&qq=xxx&content=xxx
+    /openqq/send_friend_message     #发送好友消息 参数id=xxx&content=xxx 或 uid=xxx&content=xxx
+    /openqq/send_group_message      #发送群消息   参数id=xxx&content=xxx 或 uid=xxx&content=xxx
+    /openqq/send_discuss_message    #发送讨论组消息 参数id=xxx&content=xxx （由于腾讯限制，当前无法成功发送）
+    /openqq/send_sess_message       #发送群临时消息  参数 group_id=xxx&id=xxx&content=xxx 或 group_uid=xxx&uid=xxx&content=xxx （由于腾讯限制，当前无法成功发送）
+    /openqq/send_sess_message       #发送讨论组临时消息 参数 discuss_id=xxx&id=xxx&content=xxx 或 dusciss_id=xxx&uid=xxx&content=xxx （由于腾讯限制，当前无法成功发送）
 
 调用示例
 
     http://127.0.0.1:5000/openqq/get_user_info
-    http://127.0.0.1:5000/openqq/send_message?id=xxx&content=hello 
-    http://127.0.0.1:5000/openqq/send_message?id=xxx&content=%e4%bd%a0%e5%a5%bd (中文需要utf8编码并进行urlencode)
+    http://127.0.0.1:5000/openqq/send_friend_message?id=xxx&content=hello 
+    http://127.0.0.1:5000/openqq/send_friend_message?id=xxx&content=%e4%bd%a0%e5%a5%bd (中文需要utf8编码并进行urlencode)
+
+更多完整文档请参考github上API相关说明L<https://github.com/sjdy521/Mojo-Webqq/blob/master/API.md>
+
+=head2 Mojo::Webqq::Plugin::Pu
+
+输入关键字 "周易","占卜","算命","八卦" 发送占卜消息 作者L<https://github.com/bollwarm>
+
+    $client->load("Pu");
+
+=head2 Mojo::Webqq::Plugin::ZiYue
+
+输入关键字 "子曰","论语","之乎者也" 发送论语语句 作者L<https://github.com/bollwarm>
+
+    $client->load("ZiYue");
 
 =head1 SEE ALSO
 
-L<Weixin::Client>
+L<Mojo::Weixin>
 
 L<https://github.com/sjdy521/Mojo-Webqq>
+
+L<https://github.com/sjdy521/Mojo-Weixin>
 
 =head1 AUTHOR
 
